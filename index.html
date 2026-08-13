@@ -9202,13 +9202,12 @@
         if (!selectedStars.includes(q.star)) return false;
 
         // 問題IDからカテゴリ判定
-const cat = getQuestionCategory(q.id);
+        const cat = getQuestionCategory(q.id);
 
-if (!cat) return false;
-
-if (partVal !== 'ALL' && cat.part !== partVal) return false;
-if (eraVal !== 'ALL' && cat.era !== eraVal) return false;
-if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
+        // 階層選択（部・時代・詳細項目）のフィルタ
+        if (partVal !== 'ALL' && cat.part !== partVal) return false;
+        if (eraVal !== 'ALL' && cat.era !== eraVal) return false;
+        if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
 
         // 解答状態のフィルタ（未回答・間違い）
         if (mode === 'unanswered' && history[q.id] !== undefined) return false;
@@ -9290,13 +9289,8 @@ if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
     }
 
   // 問題からカテゴリ情報を取得するヘルパー関数
-   function getQuestionCategory(questionId) {
-  const category = MAPPING_RULES.find(
-    rule => questionId >= rule.idStart && questionId <= rule.idEnd
-  );
-
-  return category || null;
-}
+    function getQuestionCategory(q) {
+      if (!q) return { part: '', era: '', item: '' };
       
       // CATEGORY_MAP から該当する章（item）を探す
       const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
