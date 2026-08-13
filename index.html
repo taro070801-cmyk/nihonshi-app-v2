@@ -9167,21 +9167,6 @@
         </div>
       `).join('');
     }
-    // 問題からカテゴリ情報を取得する関数
-    function getQuestionCategory(q) {
-      if (!q) return { part: '', era: '', item: '' };
-      
-      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
-      if (cat) {
-        return cat;
-      }
-      
-      return {
-        part: q.part || '',
-        era: q.era || '',
-        item: q.item || ''
-      };
-    }
 
     // テストスタート
    function startQuiz() {
@@ -9287,51 +9272,6 @@
       switchTab('home');
       updateStats();
     }
-
-// 文字列を正規化するヘルパー（数字や記号を除去して純粋なテキストで比較）
-    function normalizeText(text) {
-      if (!text) return '';
-      return String(text).replace(/^[0-9０-９\s\.\・\-\〜\~]+/g, '').trim();
-    }
-
-   // 問題のIDから該当するカテゴリ情報（part, era, item）を取得する関数
-    function getQuestionCategory(q) {
-      if (!q || q.id === undefined) return { part: '', era: '', item: '' };
-      
-      const qId = Number(q.id);
-
-      // 1. MAPPING_RULES（ID範囲）から検索
-      if (typeof MAPPING_RULES !== 'undefined') {
-        const rule = MAPPING_RULES.find(r => qId >= r.idStart && qId <= r.idEnd);
-        if (rule) {
-          return {
-            part: rule.part || '',
-            era: rule.era || '',
-            item: rule.item || ''
-          };
-        }
-      }
-
-      // 2. CATEGORY_MAP から検索
-      if (typeof CATEGORY_MAP !== 'undefined') {
-        const cat = CATEGORY_MAP.find(c => 
-          (q.item && c.item === q.item) || 
-          (q.era && (c.era === q.era || c.item === q.era))
-        );
-        if (cat) return cat;
-      }
-
-      return {
-        part: q.part || '',
-        era: q.era || '',
-        item: q.item || q.era || ''
-      };
-    }
-
-   // 画面切り替え & 出題開始
-      switchTab('quiz');
-      loadQuestion();
-    
     // updateStats の定義と呼び出し補完
     function updateStats() {
       if (typeof renderEraStats === 'function') {
