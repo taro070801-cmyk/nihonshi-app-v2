@@ -8775,17 +8775,57 @@
       renderSearch();
     });
 
-    function initEraSelect() {
-      const select = document.getElementById('eraSelect');
-      const eras = [...new Set(QUESTIONS.map(q => q.era))];
-      select.innerHTML = '<option value="ALL">すべて</option>';
-      eras.forEach(era => {
-        if (era) {
-          const opt = document.createElement('option');
-          opt.value = era;
-          opt.textContent = era;
-          select.appendChild(opt);
+    // カテゴリ選択肢の初期化関数
+    function initCategorySelects() {
+      const partSelect = document.getElementById('partSelect');
+      const eraSelect = document.getElementById('eraSelect');
+      const itemSelect = document.getElementById('itemSelect');
+
+      if (!partSelect || !eraSelect || !itemSelect) return;
+
+      // 「部」の選択肢をセット
+      partSelect.innerHTML = '<option value="ALL">すべて（全範囲）</option>';
+      CATEGORY_DATA.parts.forEach(p => {
+        partSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+      });
+
+      // 「部」が変更されたときの連動
+      partSelect.onchange = () => {
+        const selectedPart = partSelect.value;
+        eraSelect.innerHTML = '<option value="ALL">すべて</option>';
+        itemSelect.innerHTML = '<option value="ALL">すべて</option>';
+
+        let availableEras = CATEGORY_DATA.eras;
+        if (selectedPart !== 'ALL') {
+          availableEras = CATEGORY_DATA.eras.filter(e => e.part === selectedPart);
         }
+
+        availableEras.forEach(e => {
+          eraSelect.innerHTML += `<option value="${e.id}">${e.name}</option>`;
+        });
+      };
+
+      // 「時代」が変更されたときの連動
+      eraSelect.onchange = () => {
+        const selectedEra = eraSelect.value;
+        itemSelect.innerHTML = '<option value="ALL">すべて</option>';
+
+        let availableItems = CATEGORY_DATA.items;
+        if (selectedEra !== 'ALL') {
+          availableItems = CATEGORY_DATA.items.filter(i => i.era === selectedEra);
+        } else if (partSelect.value !== 'ALL') {
+          const partEras = CATEGORY_DATA.eras.filter(e => e.part === partSelect.value).map(e => e.id);
+          availableItems = CATEGORY_DATA.items.filter(i => partEras.includes(i.era));
+        }
+
+        availableItems.forEach(i => {
+          itemSelect.innerHTML += `<option value="${i.id}">${i.name}</option>`;
+        });
+      };
+
+      // 初期状態のセット
+      partSelect.onchange();
+    }
       });
     }
 
