@@ -9167,6 +9167,21 @@
         </div>
       `).join('');
     }
+    // 問題からカテゴリ情報を取得する関数
+    function getQuestionCategory(q) {
+      if (!q) return { part: '', era: '', item: '' };
+      
+      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+      if (cat) {
+        return cat;
+      }
+      
+      return {
+        part: q.part || '',
+        era: q.era || '',
+        item: q.item || ''
+      };
+    }
 
     // テストスタート
    function startQuiz() {
@@ -9271,6 +9286,23 @@
     function exitQuiz() {
       switchTab('home');
       updateStats();
+    }
+
+  // 問題からカテゴリ情報を取得するヘルパー関数
+    function getQuestionCategory(q) {
+      if (!q) return { part: '', era: '', item: '' };
+      
+      // CATEGORY_MAP から該当する章（item）を探す
+      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+      if (cat) {
+        return cat;
+      }
+      
+      return {
+        part: q.part || '',
+        era: q.era || '',
+        item: q.item || ''
+      };
     }
     // updateStats の定義と呼び出し補完
     function updateStats() {
