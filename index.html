@@ -8775,7 +8775,7 @@
       renderSearch();
     });
 
-    // カテゴリ選択肢の初期化関数
+ // 東進 日本史一問一答 3rd edition 完全版 対応カテゴリ選択連動
     function initCategorySelects() {
       const partSelect = document.getElementById('partSelect');
       const eraSelect = document.getElementById('eraSelect');
@@ -8783,47 +8783,53 @@
 
       if (!partSelect || !eraSelect || !itemSelect) return;
 
-      // 「部」の選択肢をセット
+      // 「部」の選択肢を抽出してセット
+      const uniqueParts = [...new Set(CATEGORY_MAP.map(m => m.part))];
       partSelect.innerHTML = '<option value="ALL">すべて（全範囲）</option>';
-      CATEGORY_DATA.parts.forEach(p => {
-        partSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+      uniqueParts.forEach(p => {
+        partSelect.innerHTML += `<option value="${p}">${p}</option>`;
       });
 
-      // 「部」が変更されたときの連動
+      // 「部」が変更されたときの連動処理
       partSelect.onchange = () => {
         const selectedPart = partSelect.value;
         eraSelect.innerHTML = '<option value="ALL">すべて</option>';
         itemSelect.innerHTML = '<option value="ALL">すべて</option>';
 
-        let availableEras = CATEGORY_DATA.eras;
+        let filtered = CATEGORY_MAP;
         if (selectedPart !== 'ALL') {
-          availableEras = CATEGORY_DATA.eras.filter(e => e.part === selectedPart);
+          filtered = filtered.filter(m => m.part === selectedPart);
         }
 
-        availableEras.forEach(e => {
-          eraSelect.innerHTML += `<option value="${e.id}">${e.name}</option>`;
+        const uniqueEras = [...new Set(filtered.map(m => m.era))];
+        uniqueEras.forEach(e => {
+          eraSelect.innerHTML += `<option value="${e}">${e}</option>`;
         });
+
+        eraSelect.onchange();
       };
 
-      // 「時代」が変更されたときの連動
+      // 「時代」が変更されたときの連動処理
       eraSelect.onchange = () => {
+        const selectedPart = partSelect.value;
         const selectedEra = eraSelect.value;
         itemSelect.innerHTML = '<option value="ALL">すべて</option>';
 
-        let availableItems = CATEGORY_DATA.items;
+        let filtered = CATEGORY_MAP;
+        if (selectedPart !== 'ALL') {
+          filtered = filtered.filter(m => m.part === selectedPart);
+        }
         if (selectedEra !== 'ALL') {
-          availableItems = CATEGORY_DATA.items.filter(i => i.era === selectedEra);
-        } else if (partSelect.value !== 'ALL') {
-          const partEras = CATEGORY_DATA.eras.filter(e => e.part === partSelect.value).map(e => e.id);
-          availableItems = CATEGORY_DATA.items.filter(i => partEras.includes(i.era));
+          filtered = filtered.filter(m => m.era === selectedEra);
         }
 
-        availableItems.forEach(i => {
-          itemSelect.innerHTML += `<option value="${i.id}">${i.name}</option>`;
+        const uniqueItems = [...new Set(filtered.map(m => m.item))];
+        uniqueItems.forEach(i => {
+          itemSelect.innerHTML += `<option value="${i}">${i}</option>`;
         });
       };
 
-      // 初期状態のセット
+      // 初回実行
       partSelect.onchange();
     }
 
