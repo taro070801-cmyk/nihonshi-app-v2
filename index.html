@@ -78,14 +78,14 @@
       <!-- 時代・細分化の階層選択 -->
       <div class="card">
         <label for="partSelect">📚 部を選択</label>
-        <select id="partSelect" onchange="onPartChange()">
+        <select id="partSelect" >
           <option value="ALL">すべて（全範囲）</option>
         </select>
       </div>
 
       <div class="card">
         <label for="eraSelect">⏳ 時代・テーマを選択</label>
-        <select id="eraSelect" onchange="onEraChange()">
+        <select id="eraSelect" >
           <option value="ALL">すべて</option>
         </select>
       </div>
@@ -143,70 +143,8 @@
         </div>
       </div>
     </div>
-<script>
-  // 時代別の正答率・苦手集計
-  function renderEraStats() {
-    const container = document.getElementById('eraStatsList');
-    if (!container) return;
 
-    const eraMap = {};
-
-    if (typeof QUESTIONS !== 'undefined') {
-      QUESTIONS.forEach(q => {
-        const h = history[q.id];
-        if (h && h.count > 0) {
-          const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
-          const eraName = cat ? cat.era : (q.era || 'その他');
-
-          if (!eraMap[eraName]) {
-            eraMap[eraName] = { correct: 0, total: 0 };
-          }
-
-          eraMap[eraName].total += h.count;
-          eraMap[eraName].correct += (h.correctCount || 0);
-        }
-      });
-    }
-
-    const eras = Object.keys(eraMap);
-    if (eras.length === 0) {
-      container.innerHTML = '<p style="color: #666; font-size: 0.9em;">まだ解答データがありません。</p>';
-      return;
-    }
-
-    let html = '<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">';
-
-    eras.forEach(era => {
-      const data = eraMap[era];
-      const rate = Math.round((data.correct / data.total) * 100);
-
-      let badgeColor = '#34c759';
-      let label = '良好';
-      if (rate < 60) {
-        badgeColor = '#ff3b30';
-        label = '⚠️ 苦手';
-      } else if (rate < 80) {
-        badgeColor = '#ff9500';
-        label = '要確認';
-      }
-
-      html += `
-        <div style="border: 1px solid #eee; padding: 8px 12px; border-radius: 8px; background: #fafafa;">
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; font-weight: bold; margin-bottom: 4px;">
-            <span>${era}</span>
-            <span style="color: ${badgeColor};">${label} (${rate}%)</span>
-          </div>
-          <div style="background: #e5e5ea; height: 6px; border-radius: 3px; overflow: hidden;">
-            <div style="background: ${badgeColor}; width: ${rate}%; height: 100%;"></div>
-          </div>
-        </div>
-      `;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-  }
-</script>
+ 
     <!-- 3. 復習画面 -->
     <div id="viewReview" style="display:none;">
       <div class="card">
@@ -257,10 +195,340 @@
     </div>
   </div>
 
-  <script>
-   // 問題データ（東進 日本史一問一答 原始・古代編）
-    const QUESTIONS = [
-      {"id": 1, "star": 1, "era": "原始", "question": "人類の祖先が地球上に現れるのは、今から約（）年前と言われている。", "answer": "700万"},
+<script>
+ 
+
+  
+     
+    let currentQuestions = [];
+    let currentIndex = 0;
+    let history = JSON.parse(localStorage.getItem('history') || '{}');
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initCategorySelects();
+      updateStats();
+      renderSearch();
+    });
+
+ // 東進 日本史一問一答 3rd edition 完全版 対応カテゴリ選択連動
+    function initCategorySelects() {
+      const partSelect = document.getElementById('partSelect');
+      const eraSelect = document.getElementById('eraSelect');
+      const itemSelect = document.getElementById('itemSelect');
+
+      if (!partSelect || !eraSelect || !itemSelect) return;
+
+      // 「部」の選択肢を抽出してセット
+      const uniqueParts = [...new Set(CATEGORY_MAP.map(m => m.part))];
+      partSelect.innerHTML = '<option value="ALL">すべて（全範囲）</option>';
+      uniqueParts.forEach(p => {
+        partSelect.innerHTML += `<option value="${p}">${p}</option>`;
+      });
+
+      // 「部」が変更されたときの連動処理
+      partSelect.onchange = () => {
+        const selectedPart = partSelect.value;
+        eraSelect.innerHTML = '<option value="ALL">すべて</option>';
+        itemSelect.innerHTML = '<option value="ALL">すべて</option>';
+
+        let filtered = CATEGORY_MAP;
+        if (selectedPart !== 'ALL') {
+          filtered = filtered.filter(m => m.part === selectedPart);
+        }
+
+        const uniqueEras = [...new Set(filtered.map(m => m.era))];
+        uniqueEras.forEach(e => {
+          eraSelect.innerHTML += `<option value="${e}">${e}</option>`;
+        });
+
+        eraSelect.onchange();
+      };
+
+      // 「時代」が変更されたときの連動処理
+      eraSelect.onchange = () => {
+        const selectedPart = partSelect.value;
+        const selectedEra = eraSelect.value;
+        itemSelect.innerHTML = '<option value="ALL">すべて</option>';
+
+        let filtered = CATEGORY_MAP;
+        if (selectedPart !== 'ALL') {
+          filtered = filtered.filter(m => m.part === selectedPart);
+        }
+        if (selectedEra !== 'ALL') {
+          filtered = filtered.filter(m => m.era === selectedEra);
+        }
+
+        const uniqueItems = [...new Set(filtered.map(m => m.item))];
+        uniqueItems.forEach(i => {
+          itemSelect.innerHTML += `<option value="${i}">${i}</option>`;
+        });
+      };
+
+      // 初回実行
+      partSelect.onchange();
+    }
+
+    // 星ボタンのトグル処理（複数選択可能）
+    function toggleStarBtn(el) {
+      el.classList.toggle('active');
+    }
+
+    // 選択された星の配列を取得
+    function getSelectedStars() {
+      const activeBtns = document.querySelectorAll('.star-btn.active');
+      return Array.from(activeBtns).map(btn => parseInt(btn.getAttribute('data-star')));
+    }
+
+    // タブ切り替え
+    function switchTab(tabName) {
+      document.querySelectorAll('#tabBar .tab').forEach(t => t.classList.remove('active'));
+      const views = ['Home', 'Progress', 'Review', 'Search'];
+      views.forEach(v => document.getElementById('view' + v).style.display = 'none');
+      document.getElementById('quizView').style.display = 'none';
+
+      if (tabName === 'home') {
+        document.querySelectorAll('#tabBar .tab')[0].classList.add('active');
+        document.getElementById('viewHome').style.display = 'block';
+      } else if (tabName === 'progress') {
+        document.querySelectorAll('#tabBar .tab')[1].classList.add('active');
+        document.getElementById('viewProgress').style.display = 'block';
+        renderProgress();
+      } else if (tabName === 'review') {
+        document.querySelectorAll('#tabBar .tab')[2].classList.add('active');
+        document.getElementById('viewReview').style.display = 'block';
+        renderReview();
+      } else if (tabName === 'search') {
+        document.querySelectorAll('#tabBar .tab')[3].classList.add('active');
+        document.getElementById('viewSearch').style.display = 'block';
+      }
+    }
+
+    function updateStats() {
+      const keys = Object.keys(history);
+      if (keys.length === 0) {
+        document.getElementById('statsAccuracy').textContent = '0';
+        return;
+      }
+      const corrects = keys.filter(k => history[k] === true).length;
+      const rate = Math.round((corrects / keys.length) * 100);
+      document.getElementById('statsAccuracy').textContent = rate;
+    }
+
+    // 進捗画面の描画
+    function renderProgress() {
+      const keys = Object.keys(history);
+      const total = QUESTIONS.length;
+      const answered = keys.length;
+      const correct = keys.filter(k => history[k] === true).length;
+      const incorrect = answered - correct;
+
+      document.getElementById('progTotal').textContent = total;
+      document.getElementById('progAnswered').textContent = answered;
+      document.getElementById('progCorrect').textContent = correct;
+      document.getElementById('progIncorrect').textContent = incorrect;
+
+      [3, 2, 1, 0].forEach(star => {
+        const starQs = QUESTIONS.filter(q => q.star === star);
+        const starAns = starQs.filter(q => history[q.id] !== undefined);
+        const starCorr = starQs.filter(q => history[q.id] === true);
+        const rate = starAns.length ? Math.round((starCorr.length / starAns.length) * 100) : 0;
+        document.getElementById(`rateStar${star}`).textContent = `${rate}% (${starCorr.length}/${starAns.length}問正解)`;
+      });
+    }
+
+    // 復習画面の描画
+    function renderReview() {
+      const mistaken = QUESTIONS.filter(q => history[q.id] === false).length;
+      const unanswered = QUESTIONS.filter(q => history[q.id] === undefined).length;
+      document.getElementById('countMistaken').textContent = mistaken;
+      document.getElementById('countUnanswered').textContent = unanswered;
+    }
+
+    // 復習タブからのクイックスタート
+    function startQuickQuiz(mode) {
+      document.getElementById('modeSelect').value = mode;
+      switchTab('home');
+      startQuiz();
+    }
+
+    // 検索画面の描画
+    function renderSearch() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const resultsEl = document.getElementById('searchResults');
+      
+      const filtered = QUESTIONS.filter(q => {
+        if (!query) return true;
+        return q.question.toLowerCase().includes(query) || 
+               q.answer.toLowerCase().includes(query) || 
+               q.era.toLowerCase().includes(query);
+      });
+
+      if (filtered.length === 0) {
+        resultsEl.innerHTML = '<p style="color:#8e8e93;">該当する問題が見つかりません。</p>';
+        return;
+      }
+
+      resultsEl.innerHTML = filtered.map(q => `
+        <div class="search-item">
+          <span class="badge">${q.era}</span>
+          <span class="badge" style="background:#fff3c4; color:#996600;">${'★'.repeat(q.star || 0) || '無印'}</span>
+          <div class="search-q">${q.question}</div>
+          <div class="search-a">答: ${q.answer}</div>
+          ${q.explanation ? `<div style="font-size:12px; color:#666; margin-top:2px;">${q.explanation}</div>` : ''}
+        </div>
+      `).join('');
+    }
+    // 問題からカテゴリ情報を取得する関数
+    function getQuestionCategory(q) {
+      if (!q) return { part: '', era: '', item: '' };
+      
+      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+      if (cat) {
+        return cat;
+      }
+      
+      return {
+        part: q.part || '',
+        era: q.era || '',
+        item: q.item || ''
+      };
+    }
+
+    // テストスタート
+   function startQuiz() {
+      const selectedStars = getSelectedStars();
+      const partVal = document.getElementById('partSelect').value;
+      const eraVal = document.getElementById('eraSelect').value;
+      const itemVal = document.getElementById('itemSelect').value;
+      const mode = document.getElementById('modeSelect').value;
+      const countVal = document.getElementById('countSelect').value;
+
+      if (selectedStars.length === 0) {
+        alert('星を最低1つ以上選択してください。');
+        return;
+      }
+
+      let filtered = QUESTIONS.filter(q => {
+        // 星の選択チェック
+        if (!selectedStars.includes(q.star)) return false;
+
+        // 問題IDからカテゴリ判定
+        const cat = getQuestionCategory(q.id);
+
+        // 階層選択（部・時代・詳細項目）のフィルタ
+        if (partVal !== 'ALL' && cat.part !== partVal) return false;
+        if (eraVal !== 'ALL' && cat.era !== eraVal) return false;
+        if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
+
+        // 解答状態のフィルタ（未回答・間違い）
+        if (mode === 'unanswered' && history[q.id] !== undefined) return false;
+        if (mode === 'mistaken' && history[q.id] !== false) return false;
+
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        alert('条件に一致する問題がありません。');
+        return;
+      }
+
+      // ランダムシャッフル
+      filtered.sort(() => Math.random() - 0.5);
+
+      if (countVal !== 'all') {
+        filtered = filtered.slice(0, parseInt(countVal));
+      }
+
+      currentQuestions = filtered;
+      currentIndex = 0;
+
+      document.getElementById('viewHome').style.display = 'none';
+      document.getElementById('quizView').style.display = 'block';
+      loadQuestion();
+    }
+
+    function loadQuestion() {
+      if (currentIndex >= currentQuestions.length) {
+        alert('すべての問題が終了しました！');
+        exitQuiz();
+        return;
+      }
+
+      const q = currentQuestions[currentIndex];
+      document.getElementById('eraBadge').textContent = q.era;
+      document.getElementById('starBadge').textContent = '★'.repeat(q.star) || '無印';
+      document.getElementById('progressText').textContent = `${currentIndex + 1} / ${currentQuestions.length}`;
+      document.getElementById('qText').textContent = q.question;
+      
+      document.getElementById('aText').textContent = '答: ' + q.answer;
+      document.getElementById('aText').style.display = 'none';
+      
+      const expEl = document.getElementById('expText');
+      if (q.explanation) {
+        expEl.textContent = '【解説】' + q.explanation;
+      } else {
+        expEl.textContent = '';
+      }
+      expEl.style.display = 'none';
+
+      document.getElementById('ansBtn').style.display = 'block';
+      document.getElementById('judgeBtns').style.display = 'none';
+    }
+
+    function showAnswer() {
+      document.getElementById('aText').style.display = 'block';
+      if (document.getElementById('expText').textContent) {
+        document.getElementById('expText').style.display = 'block';
+      }
+      document.getElementById('ansBtn').style.display = 'none';
+      document.getElementById('judgeBtns').style.display = 'block';
+    }
+
+    function answerQuestion(isCorrect) {
+      const q = currentQuestions[currentIndex];
+      history[q.id] = isCorrect;
+      localStorage.setItem('history', JSON.stringify(history));
+      updateStats();
+
+      currentIndex++;
+      loadQuestion();
+    }
+
+    function exitQuiz() {
+      switchTab('home');
+      updateStats();
+    }
+
+  // 問題からカテゴリ情報を取得するヘルパー関数
+    function getQuestionCategory(q) {
+      if (!q) return { part: '', era: '', item: '' };
+      
+      // CATEGORY_MAP から該当する章（item）を探す
+      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+      if (cat) {
+        return cat;
+      }
+      
+      return {
+        part: q.part || '',
+        era: q.era || '',
+        item: q.item || ''
+      };
+    }
+    // updateStats の定義と呼び出し補完
+    function updateStats() {
+      if (typeof renderEraStats === 'function') {
+        renderEraStats();
+      }
+    }
+  </script>
+<script>
+  // 1. 問題データサンプル
+  const QUESTIONS = [
+    { "id": 1, "star": 1, "era": "Ⅰ 原始時代", "item": "1 日本文化のあけぼの", "question": "人類の祖先が地球上に現れるのは、今から約（）年前と言われている。", "answer": "700万", "explanation": "直立二足歩行と道具の使用が特徴です。" },
+    { "id": 2, "star": 3, "era": "Ⅰ 原始時代", "item": "1 日本文化のあけぼの", "question": "地質年代の第四紀は、およそ1万年前を境に、（）と（）に二分される。", "answer": "更新世、完新世", "explanation": "更新世は氷河時代とも呼ばれます。" }
+  ];
+{"id": 1, "star": 1, "era": "原始", "question": "人類の祖先が地球上に現れるのは、今から約（）年前と言われている。", "answer": "700万"},
       {"id": 2, "star": 3, "era": "原始", "question": "地質年代の第四紀は、およそ1万年前を境に、（）と（）に二分される。", "answer": "更新世、完新世"},
       {"id": 3, "star": 3, "era": "原始", "question": "更新世は、（）時代とも呼ばれ、寒冷な（）期と比較的温暖な（）期とが交互に訪れた。", "answer": "氷河期、氷期、間氷期"},
       {"id": 4, "star": 3, "era": "原始", "question": "日本列島にトライした大型動物を代表する（）ゾウは、19世紀に来日したドイツ人地質学者の名にちなんでつけられた。", "answer": "ナウマンゾウ"},
@@ -8677,7 +8945,162 @@
   {"id": 4348, "star": 1, "era": "平成", "question": "1992年、ブラジルのリオデジャネイロで（）が開催され、地球温暖化など地球規模の環境問題について議論が行われた。", "answer": "国連環境開発会議（地球サミット）"},
   {"id": 4349, "star": 1, "era": "平成", "question": "2001年9月11日、ハイジャックされた米国民間航空機4機が、ニューヨークの世界貿易センタービルやワシントンの国防総省などに激突する（）事件が起こった。", "answer": "同時多発テロ事件"},
   {"id": 4350, "star": 0, "era": "平成", "question": "アラブ諸国では2010年末から翌年にかけて、チュニジアのジャスミン革命を発端し、（）と呼ばれる民主化要求運動が起こった。", "answer": "アラブの春"},
-  {"id": 4351, "star": 0, "era": "平成", "question": "シリアでは2011年から内戦が始まり、過激派の武装組織である（）が中東に勢力を広げた。", "answer": "IS（イスラム国）"} ];
+  {"id": 4351, "star": 0, "era": "平成", "question": "シリアでは2011年から内戦が始まり、過激派の武装組織である（）が中東に勢力を広げた。", "answer": "IS（イスラム国）"}
+  // 2. カテゴリマップ定義
+  const CATEGORY_MAP = [
+    // 第1部 原始・古代・中世
+      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "1 日本文化のあけぼの" },
+      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "2 縄文文化の成立" },
+      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "3 弥生文化の成立" },
+      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "4 小国の形成と東アジア" },
+
+      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "5 小国の形成と東アジアとの関係" },
+      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "6 古墳文化（1）～古墳の変遷～" },
+      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "7 古墳文化（2）～大陸文化の受容と信仰～" },
+      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "8 ヤマト政権の成立" },
+
+      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "9 統一国家への道" },
+      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "10 飛鳥文化" },
+      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "11 律令国家の形成" },
+      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "12 白鳳文化" },
+
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "13 律令体制（1）～令国家のしくみ～" },
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "14 律令体制（2）～令国家の支配組織～" },
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "15 律令体制（3）～令国家の税制～" },
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "16 奈良時代の政治（1）～平城京の時代～" },
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "17 奈良時代の政治（2）～奈良時代の政変～" },
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "18 天平文化（1）～鎮護国家の仏教～" },
+      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "19 天平文化（2）～天平文化の展開～" },
+
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "20 平安初期の政治" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "21 弘仁・貞観文化" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "22 藤原氏の他氏排斥" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "23 摂関政治の展開と平安時代の対外関係" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "24 国風文化（1）～国風文化の展開～" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "25 国風文化（2）～浄土教文化の発展～" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "26 地方政治の変容と荘園制度" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "27 地方政治の混乱と武士の台頭" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "28 院政の開始" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "29 平氏政権の成立" },
+      { part: "第1部 原始・古代・中世", era: "平安時代", item: "30 院政期の文化" },
+
+      // 第2部 中世
+      { part: "第2部 中世", era: "鎌倉時代", item: "31 源平の争乱と鎌倉幕府の成立" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "32 執権政治の確立" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "33 元寇と鎌倉幕府の衰退" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "34 武士の生活と鎌倉時代の経済" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "35 鎌倉文化（1）～宗教～" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "36 鎌倉文化（2）～美術～" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "37 鎌倉文化（3）～学問・文学～" },
+      { part: "第2部 中世", era: "鎌倉時代", item: "38 鎌倉幕府の滅亡" },
+
+      { part: "第2部 中世", era: "室町時代", item: "39 南北朝の動乱" },
+      { part: "第2部 中世", era: "室町時代", item: "40 室町幕府の組織" },
+      { part: "第2部 中世", era: "室町時代", item: "41 室町幕府の展開と動揺" },
+      { part: "第2部 中世", era: "室町時代", item: "42 惣村と土一揆" },
+      { part: "第2部 中世", era: "室町時代", item: "43 室町時代の外交（1）～日明関係～" },
+      { part: "第2部 中世", era: "室町時代", item: "44 室町時代の外交（2）～対外関係～" },
+      { part: "第2部 中世", era: "室町時代", item: "45 室町時代の産業と経済" },
+      { part: "第2部 中世", era: "室町時代", item: "46 戦国大名" },
+      { part: "第2部 中世", era: "室町時代", item: "47 室町時代の都市の発展" },
+      { part: "第2部 中世", era: "室町時代", item: "48 室町時代の文化（1）～宗教・学問～" },
+      { part: "第2部 中世", era: "室町時代", item: "49 室町時代の文化（2）～絵画・建築・工芸～" },
+      { part: "第2部 中世", era: "室町時代", item: "50 室町時代の文化（3）～能楽・連歌など～" },
+
+      // 第3部 近世
+      { part: "第3部 近世", era: "安土桃山時代", item: "51 ヨーロッパ人の来航" },
+      { part: "第3部 近世", era: "安土桃山時代", item: "52 信長の政治" },
+      { part: "第3部 近世", era: "安土桃山時代", item: "53 秀吉の政治（1）～秀吉の天下統一～" },
+      { part: "第3部 近世", era: "安土桃山時代", item: "54 秀吉の政治（2）～秀吉の対外政策～" },
+      { part: "第3部 近世", era: "安土桃山時代", item: "55 桃山文化" },
+
+      { part: "第3部 近世", era: "江戸時代", item: "56 江戸幕府の成立" },
+      { part: "第3部 近世", era: "江戸時代", item: "57 大名の統制" },
+      { part: "第3部 近世", era: "江戸時代", item: "58 朝廷・寺社の統制" },
+      { part: "第3部 近世", era: "江戸時代", item: "59 農民・町人の統制" },
+      { part: "第3部 近世", era: "江戸時代", item: "60 江戸時代初期の外交" },
+      { part: "第3部 近世", era: "江戸時代", item: "61 鎖国への展開と長崎貿易" },
+      { part: "第3部 近世", era: "江戸時代", item: "62 江戸時代初期の文化" },
+      { part: "第3部 近世", era: "江戸時代", item: "63 文治政治と正徳の政治" },
+      { part: "第3部 近世", era: "江戸時代", item: "64 江戸時代の農業" },
+      { part: "第3部 近世", era: "江戸時代", item: "65 江戸時代の諸産業" },
+      { part: "第3部 近世", era: "江戸時代", item: "66 江戸時代の交通" },
+      { part: "第3部 近世", era: "江戸時代", item: "67 江戸時代の商業" },
+      { part: "第3部 近世", era: "江戸時代", item: "68 元禄文化（1）～学問の興隆～" },
+      { part: "第3部 近世", era: "江戸時代", item: "69 元禄文化（2）～元禄時代の諸文化～" },
+      { part: "第3部 近世", era: "江戸時代", item: "70 享保の改革" },
+      { part: "第3部 近世", era: "江戸時代", item: "71 田沼時代と農村" },
+      { part: "第3部 近世", era: "江戸時代", item: "72 寛政の改革" },
+      { part: "第3部 近世", era: "江戸時代", item: "73 列強の接近と生産の近代化" },
+      { part: "第3部 近世", era: "江戸時代", item: "74 天保の改革と藩政改革" },
+      { part: "第3部 近世", era: "江戸時代", item: "75 宝暦・天明期の文化（1）～洋学・国学・教育～" },
+      { part: "第3部 近世", era: "江戸時代", item: "76 宝暦・天明期の文化（2）～文学・芸能・絵画～" },
+      { part: "第3部 近世", era: "江戸時代", item: "77 化政文化（1）～学問・思想・教育～" },
+      { part: "第3部 近世", era: "江戸時代", item: "78 化政文化（2）～文学・美術・民衆文化～" },
+      { part: "第3部 近世", era: "江戸時代", item: "歴史総合（1）～開国前の「世界」～" },
+      { part: "第3部 近世", era: "江戸時代", item: "79 開国（1）～開国と和親～" },
+      { part: "第3部 近世", era: "江戸時代", item: "80 開国（2）～不平等条約の締結と開国後の貿易～" },
+      { part: "第3部 近世", era: "江戸時代", item: "81 江戸幕府の滅亡（1）～幕末の動揺と混乱～" },
+      { part: "第3部 近世", era: "江戸時代", item: "82 江戸幕府の滅亡（2）～幕府滅亡と幕末社会～" },
+      { part: "第3部 近世", era: "江戸時代", item: "歴史総合（2）～幕末期の「世界」～" },
+
+      // 第4部 近代・現代
+      { part: "第4部 近代・現代", era: "明治時代", item: "83 明治維新（1）～明治政府の政治体制～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "84 明治維新（2）～明治政府の経済政策～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "85 明治維新（3）～明治政府の殖産興業政策～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "86 不平士族の反乱と自由民権運動" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "87 松方財政と激化事件" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "88 憲法と諸法典の整備" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "89 初期議会" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "90 条約改正" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "91 日清戦争" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "92 政党内閣の誕生と立憲政友会の成立" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "93 中国分割と日露戦争" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "94 日露戦争後の外交" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "95 官営事業の払い下げと軽工業の発展" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "96 重工業の形成と発展" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "97 社会運動の発生" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "98 明治時代の文化（1）～思想～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "99 明治時代の文化（2）～宗教～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "100 明治時代の文化（3）～教育～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "101 明治時代の文化（4）～学問～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "102 明治時代の文化（5）～新聞・雑誌～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "103 明治時代の文化（6）～文学～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "104 明治時代の文化（7）～芸術・その他～" },
+      { part: "第4部 近代・現代", era: "明治時代", item: "歴史総合（3）～明治時代の「世界」～" },
+
+      { part: "第4部 近代・現代", era: "大正時代", item: "105 第1次護憲運動" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "106 第一次世界大戦" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "107 政党内閣の成立と終戦" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "108 ワシントン体制と護憲運動" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "109 大正時代の社会運動" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "110 大正時代の文化（1）～学問・思想～" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "111 大正時代の文化（2）～文学～" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "112 大正時代の文化（3）～美術・芸能・生活～" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "113 恐慌の時代" },
+      { part: "第4部 近代・現代", era: "大正時代", item: "歴史総合（4）～大正時代の「世界」～" },
+
+      { part: "第4部 近代・現代", era: "昭和時代", item: "114 政党内閣の終焉" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "115 ファシズムの台頭と昭和初期の経済" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "116 日中戦争" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "117 第二次世界大戦" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "118 太平洋戦争" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "119 戦前（戦時下）の文化" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "歴史総合（5）～戦前の「世界」～" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "120 占領と戦後処理" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "121 戦後の経済の民主化" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "122 民主化政策" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "123 日本国憲法の公布と政治" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "124 冷戦と占領政策の転換" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "125 日本の独立" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "126 55年体制" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "127 高度経済成長" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "128 高度経済成長の終焉" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "129 1980年代の日本と世界" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "130 1990年代以降の日本と世界" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "131 戦後の文化と生活" },
+      { part: "第4部 近代・現代", era: "昭和時代", item: "歴史総合（6）～戦後の「世界」～" }
+  ];
 
   // 提示された分類に基づく全131項目のマッピング定義
     const MAPPING_RULES = [
@@ -8834,482 +9257,355 @@
       { part: "第4部 近代・現代", era: "Ⅻ 昭和・現代", item: "131 戦後の文化と生活", idStart: 4298, idEnd: 4325 },
       { part: "第4部 近代・現代", era: "Ⅻ 昭和・現代", item: "歴史総合（6）～戦後の「世界」～", idStart: 4326, idEnd: 4351 }
     ];
-     
-    let currentQuestions = [];
-    let currentIndex = 0;
-    let history = JSON.parse(localStorage.getItem('history') || '{}');
-// 東進 日本史一問一答 3rd edition 完全版 カテゴリデータ定義
-    const CATEGORY_MAP = [
-      // 第1部 原始・古代・中世
-      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "1 日本文化のあけぼの" },
-      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "2 縄文文化の成立" },
-      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "3 弥生文化の成立" },
-      { part: "第1部 原始・古代・中世", era: "旧石器・縄文・弥生時代", item: "4 小国の形成と東アジア" },
+  
+  // 3. アプリのグローバル状態
+  let currentQuestions = [];
+  let currentIndex = 0;
+  let history = JSON.parse(localStorage.getItem('history') || '{}');
 
-      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "5 小国の形成と東アジアとの関係" },
-      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "6 古墳文化（1）～古墳の変遷～" },
-      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "7 古墳文化（2）～大陸文化の受容と信仰～" },
-      { part: "第1部 原始・古代・中世", era: "古墳時代", item: "8 ヤマト政権の成立" },
+  // 初期化処理
+  window.addEventListener('DOMContentLoaded', () => {
+    initCategorySelects();
+    updateStats();
+    renderSearch();
+  });
 
-      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "9 統一国家への道" },
-      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "10 飛鳥文化" },
-      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "11 律令国家の形成" },
-      { part: "第1部 原始・古代・中世", era: "飛鳥時代", item: "12 白鳳文化" },
+  // カテゴリ選択肢の初期化と連動
+  function initCategorySelects() {
+    const partSelect = document.getElementById('partSelect');
+    const eraSelect = document.getElementById('eraSelect');
+    const itemSelect = document.getElementById('itemSelect');
 
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "13 律令体制（1）～令国家のしくみ～" },
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "14 律令体制（2）～令国家の支配組織～" },
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "15 律令体制（3）～令国家の税制～" },
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "16 奈良時代の政治（1）～平城京の時代～" },
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "17 奈良時代の政治（2）～奈良時代の政変～" },
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "18 天平文化（1）～鎮護国家の仏教～" },
-      { part: "第1部 原始・古代・中世", era: "奈良時代", item: "19 天平文化（2）～天平文化の展開～" },
+    if (!partSelect || !eraSelect || !itemSelect) return;
 
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "20 平安初期の政治" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "21 弘仁・貞観文化" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "22 藤原氏の他氏排斥" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "23 摂関政治の展開と平安時代の対外関係" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "24 国風文化（1）～国風文化の展開～" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "25 国風文化（2）～浄土教文化の発展～" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "26 地方政治の変容と荘園制度" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "27 地方政治の混乱と武士の台頭" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "28 院政の開始" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "29 平氏政権の成立" },
-      { part: "第1部 原始・古代・中世", era: "平安時代", item: "30 院政期の文化" },
-
-      // 第2部 中世
-      { part: "第2部 中世", era: "鎌倉時代", item: "31 源平の争乱と鎌倉幕府の成立" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "32 執権政治の確立" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "33 元寇と鎌倉幕府の衰退" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "34 武士の生活と鎌倉時代の経済" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "35 鎌倉文化（1）～宗教～" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "36 鎌倉文化（2）～美術～" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "37 鎌倉文化（3）～学問・文学～" },
-      { part: "第2部 中世", era: "鎌倉時代", item: "38 鎌倉幕府の滅亡" },
-
-      { part: "第2部 中世", era: "室町時代", item: "39 南北朝の動乱" },
-      { part: "第2部 中世", era: "室町時代", item: "40 室町幕府の組織" },
-      { part: "第2部 中世", era: "室町時代", item: "41 室町幕府の展開と動揺" },
-      { part: "第2部 中世", era: "室町時代", item: "42 惣村と土一揆" },
-      { part: "第2部 中世", era: "室町時代", item: "43 室町時代の外交（1）～日明関係～" },
-      { part: "第2部 中世", era: "室町時代", item: "44 室町時代の外交（2）～対外関係～" },
-      { part: "第2部 中世", era: "室町時代", item: "45 室町時代の産業と経済" },
-      { part: "第2部 中世", era: "室町時代", item: "46 戦国大名" },
-      { part: "第2部 中世", era: "室町時代", item: "47 室町時代の都市の発展" },
-      { part: "第2部 中世", era: "室町時代", item: "48 室町時代の文化（1）～宗教・学問～" },
-      { part: "第2部 中世", era: "室町時代", item: "49 室町時代の文化（2）～絵画・建築・工芸～" },
-      { part: "第2部 中世", era: "室町時代", item: "50 室町時代の文化（3）～能楽・連歌など～" },
-
-      // 第3部 近世
-      { part: "第3部 近世", era: "安土桃山時代", item: "51 ヨーロッパ人の来航" },
-      { part: "第3部 近世", era: "安土桃山時代", item: "52 信長の政治" },
-      { part: "第3部 近世", era: "安土桃山時代", item: "53 秀吉の政治（1）～秀吉の天下統一～" },
-      { part: "第3部 近世", era: "安土桃山時代", item: "54 秀吉の政治（2）～秀吉の対外政策～" },
-      { part: "第3部 近世", era: "安土桃山時代", item: "55 桃山文化" },
-
-      { part: "第3部 近世", era: "江戸時代", item: "56 江戸幕府の成立" },
-      { part: "第3部 近世", era: "江戸時代", item: "57 大名の統制" },
-      { part: "第3部 近世", era: "江戸時代", item: "58 朝廷・寺社の統制" },
-      { part: "第3部 近世", era: "江戸時代", item: "59 農民・町人の統制" },
-      { part: "第3部 近世", era: "江戸時代", item: "60 江戸時代初期の外交" },
-      { part: "第3部 近世", era: "江戸時代", item: "61 鎖国への展開と長崎貿易" },
-      { part: "第3部 近世", era: "江戸時代", item: "62 江戸時代初期の文化" },
-      { part: "第3部 近世", era: "江戸時代", item: "63 文治政治と正徳の政治" },
-      { part: "第3部 近世", era: "江戸時代", item: "64 江戸時代の農業" },
-      { part: "第3部 近世", era: "江戸時代", item: "65 江戸時代の諸産業" },
-      { part: "第3部 近世", era: "江戸時代", item: "66 江戸時代の交通" },
-      { part: "第3部 近世", era: "江戸時代", item: "67 江戸時代の商業" },
-      { part: "第3部 近世", era: "江戸時代", item: "68 元禄文化（1）～学問の興隆～" },
-      { part: "第3部 近世", era: "江戸時代", item: "69 元禄文化（2）～元禄時代の諸文化～" },
-      { part: "第3部 近世", era: "江戸時代", item: "70 享保の改革" },
-      { part: "第3部 近世", era: "江戸時代", item: "71 田沼時代と農村" },
-      { part: "第3部 近世", era: "江戸時代", item: "72 寛政の改革" },
-      { part: "第3部 近世", era: "江戸時代", item: "73 列強の接近と生産の近代化" },
-      { part: "第3部 近世", era: "江戸時代", item: "74 天保の改革と藩政改革" },
-      { part: "第3部 近世", era: "江戸時代", item: "75 宝暦・天明期の文化（1）～洋学・国学・教育～" },
-      { part: "第3部 近世", era: "江戸時代", item: "76 宝暦・天明期の文化（2）～文学・芸能・絵画～" },
-      { part: "第3部 近世", era: "江戸時代", item: "77 化政文化（1）～学問・思想・教育～" },
-      { part: "第3部 近世", era: "江戸時代", item: "78 化政文化（2）～文学・美術・民衆文化～" },
-      { part: "第3部 近世", era: "江戸時代", item: "歴史総合（1）～開国前の「世界」～" },
-      { part: "第3部 近世", era: "江戸時代", item: "79 開国（1）～開国と和親～" },
-      { part: "第3部 近世", era: "江戸時代", item: "80 開国（2）～不平等条約の締結と開国後の貿易～" },
-      { part: "第3部 近世", era: "江戸時代", item: "81 江戸幕府の滅亡（1）～幕末の動揺と混乱～" },
-      { part: "第3部 近世", era: "江戸時代", item: "82 江戸幕府の滅亡（2）～幕府滅亡と幕末社会～" },
-      { part: "第3部 近世", era: "江戸時代", item: "歴史総合（2）～幕末期の「世界」～" },
-
-      // 第4部 近代・現代
-      { part: "第4部 近代・現代", era: "明治時代", item: "83 明治維新（1）～明治政府の政治体制～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "84 明治維新（2）～明治政府の経済政策～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "85 明治維新（3）～明治政府の殖産興業政策～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "86 不平士族の反乱と自由民権運動" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "87 松方財政と激化事件" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "88 憲法と諸法典の整備" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "89 初期議会" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "90 条約改正" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "91 日清戦争" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "92 政党内閣の誕生と立憲政友会の成立" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "93 中国分割と日露戦争" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "94 日露戦争後の外交" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "95 官営事業の払い下げと軽工業の発展" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "96 重工業の形成と発展" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "97 社会運動の発生" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "98 明治時代の文化（1）～思想～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "99 明治時代の文化（2）～宗教～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "100 明治時代の文化（3）～教育～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "101 明治時代の文化（4）～学問～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "102 明治時代の文化（5）～新聞・雑誌～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "103 明治時代の文化（6）～文学～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "104 明治時代の文化（7）～芸術・その他～" },
-      { part: "第4部 近代・現代", era: "明治時代", item: "歴史総合（3）～明治時代の「世界」～" },
-
-      { part: "第4部 近代・現代", era: "大正時代", item: "105 第1次護憲運動" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "106 第一次世界大戦" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "107 政党内閣の成立と終戦" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "108 ワシントン体制と護憲運動" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "109 大正時代の社会運動" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "110 大正時代の文化（1）～学問・思想～" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "111 大正時代の文化（2）～文学～" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "112 大正時代の文化（3）～美術・芸能・生活～" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "113 恐慌の時代" },
-      { part: "第4部 近代・現代", era: "大正時代", item: "歴史総合（4）～大正時代の「世界」～" },
-
-      { part: "第4部 近代・現代", era: "昭和時代", item: "114 政党内閣の終焉" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "115 ファシズムの台頭と昭和初期の経済" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "116 日中戦争" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "117 第二次世界大戦" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "118 太平洋戦争" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "119 戦前（戦時下）の文化" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "歴史総合（5）～戦前の「世界」～" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "120 占領と戦後処理" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "121 戦後の経済の民主化" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "122 民主化政策" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "123 日本国憲法の公布と政治" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "124 冷戦と占領政策の転換" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "125 日本の独立" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "126 55年体制" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "127 高度経済成長" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "128 高度経済成長の終焉" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "129 1980年代の日本と世界" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "130 1990年代以降の日本と世界" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "131 戦後の文化と生活" },
-      { part: "第4部 近代・現代", era: "昭和時代", item: "歴史総合（6）～戦後の「世界」～" }
-    ];
-    window.addEventListener('DOMContentLoaded', () => {
-      initCategorySelects();
-      updateStats();
-      renderSearch();
+    const uniqueParts = [...new Set(CATEGORY_MAP.map(m => m.part))];
+    partSelect.innerHTML = '<option value="ALL">すべて（全範囲）</option>';
+    uniqueParts.forEach(p => {
+      partSelect.innerHTML += `<option value="${p}">${p}</option>`;
     });
 
- // 東進 日本史一問一答 3rd edition 完全版 対応カテゴリ選択連動
-    function initCategorySelects() {
-      const partSelect = document.getElementById('partSelect');
-      const eraSelect = document.getElementById('eraSelect');
-      const itemSelect = document.getElementById('itemSelect');
+    partSelect.onchange = () => {
+      const selectedPart = partSelect.value;
+      eraSelect.innerHTML = '<option value="ALL">すべて</option>';
+      itemSelect.innerHTML = '<option value="ALL">すべて</option>';
 
-      if (!partSelect || !eraSelect || !itemSelect) return;
+      let filtered = CATEGORY_MAP;
+      if (selectedPart !== 'ALL') {
+        filtered = filtered.filter(m => m.part === selectedPart);
+      }
 
-      // 「部」の選択肢を抽出してセット
-      const uniqueParts = [...new Set(CATEGORY_MAP.map(m => m.part))];
-      partSelect.innerHTML = '<option value="ALL">すべて（全範囲）</option>';
-      uniqueParts.forEach(p => {
-        partSelect.innerHTML += `<option value="${p}">${p}</option>`;
+      const uniqueEras = [...new Set(filtered.map(m => m.era))];
+      uniqueEras.forEach(e => {
+        eraSelect.innerHTML += `<option value="${e}">${e}</option>`;
       });
 
-      // 「部」が変更されたときの連動処理
-      partSelect.onchange = () => {
-        const selectedPart = partSelect.value;
-        eraSelect.innerHTML = '<option value="ALL">すべて</option>';
-        itemSelect.innerHTML = '<option value="ALL">すべて</option>';
+      eraSelect.onchange();
+    };
 
-        let filtered = CATEGORY_MAP;
-        if (selectedPart !== 'ALL') {
-          filtered = filtered.filter(m => m.part === selectedPart);
-        }
+    eraSelect.onchange = () => {
+      const selectedPart = partSelect.value;
+      const selectedEra = eraSelect.value;
+      itemSelect.innerHTML = '<option value="ALL">すべて</option>';
 
-        const uniqueEras = [...new Set(filtered.map(m => m.era))];
-        uniqueEras.forEach(e => {
-          eraSelect.innerHTML += `<option value="${e}">${e}</option>`;
-        });
-
-        eraSelect.onchange();
-      };
-
-      // 「時代」が変更されたときの連動処理
-      eraSelect.onchange = () => {
-        const selectedPart = partSelect.value;
-        const selectedEra = eraSelect.value;
-        itemSelect.innerHTML = '<option value="ALL">すべて</option>';
-
-        let filtered = CATEGORY_MAP;
-        if (selectedPart !== 'ALL') {
-          filtered = filtered.filter(m => m.part === selectedPart);
-        }
-        if (selectedEra !== 'ALL') {
-          filtered = filtered.filter(m => m.era === selectedEra);
-        }
-
-        const uniqueItems = [...new Set(filtered.map(m => m.item))];
-        uniqueItems.forEach(i => {
-          itemSelect.innerHTML += `<option value="${i}">${i}</option>`;
-        });
-      };
-
-      // 初回実行
-      partSelect.onchange();
-    }
-
-    // 星ボタンのトグル処理（複数選択可能）
-    function toggleStarBtn(el) {
-      el.classList.toggle('active');
-    }
-
-    // 選択された星の配列を取得
-    function getSelectedStars() {
-      const activeBtns = document.querySelectorAll('.star-btn.active');
-      return Array.from(activeBtns).map(btn => parseInt(btn.getAttribute('data-star')));
-    }
-
-    // タブ切り替え
-    function switchTab(tabName) {
-      document.querySelectorAll('#tabBar .tab').forEach(t => t.classList.remove('active'));
-      const views = ['Home', 'Progress', 'Review', 'Search'];
-      views.forEach(v => document.getElementById('view' + v).style.display = 'none');
-      document.getElementById('quizView').style.display = 'none';
-
-      if (tabName === 'home') {
-        document.querySelectorAll('#tabBar .tab')[0].classList.add('active');
-        document.getElementById('viewHome').style.display = 'block';
-      } else if (tabName === 'progress') {
-        document.querySelectorAll('#tabBar .tab')[1].classList.add('active');
-        document.getElementById('viewProgress').style.display = 'block';
-        renderProgress();
-      } else if (tabName === 'review') {
-        document.querySelectorAll('#tabBar .tab')[2].classList.add('active');
-        document.getElementById('viewReview').style.display = 'block';
-        renderReview();
-      } else if (tabName === 'search') {
-        document.querySelectorAll('#tabBar .tab')[3].classList.add('active');
-        document.getElementById('viewSearch').style.display = 'block';
+      let filtered = CATEGORY_MAP;
+      if (selectedPart !== 'ALL') {
+        filtered = filtered.filter(m => m.part === selectedPart);
       }
-    }
-
-    function updateStats() {
-      const keys = Object.keys(history);
-      if (keys.length === 0) {
-        document.getElementById('statsAccuracy').textContent = '0';
-        return;
+      if (selectedEra !== 'ALL') {
+        filtered = filtered.filter(m => m.era === selectedEra);
       }
+
+      const uniqueItems = [...new Set(filtered.map(m => m.item))];
+      uniqueItems.forEach(i => {
+        itemSelect.innerHTML += `<option value="${i}">${i}</option>`;
+      });
+    };
+
+    partSelect.onchange();
+  }
+
+  // 星ボタンのトグル
+  function toggleStarBtn(el) {
+    el.classList.toggle('active');
+  }
+
+  function getSelectedStars() {
+    const activeBtns = document.querySelectorAll('.star-btn.active');
+    return Array.from(activeBtns).map(btn => parseInt(btn.getAttribute('data-star')));
+  }
+
+  // タブ切り替え
+  function switchTab(tabName) {
+    document.querySelectorAll('#tabBar .tab').forEach(t => t.classList.remove('active'));
+    const views = ['Home', 'Progress', 'Review', 'Search'];
+    views.forEach(v => document.getElementById('view' + v).style.display = 'none');
+    document.getElementById('quizView').style.display = 'none';
+
+    if (tabName === 'home') {
+      document.querySelectorAll('#tabBar .tab')[0].classList.add('active');
+      document.getElementById('viewHome').style.display = 'block';
+    } else if (tabName === 'progress') {
+      document.querySelectorAll('#tabBar .tab')[1].classList.add('active');
+      document.getElementById('viewProgress').style.display = 'block';
+      renderProgress();
+    } else if (tabName === 'review') {
+      document.querySelectorAll('#tabBar .tab')[2].classList.add('active');
+      document.getElementById('viewReview').style.display = 'block';
+      renderReview();
+    } else if (tabName === 'search') {
+      document.querySelectorAll('#tabBar .tab')[3].classList.add('active');
+      document.getElementById('viewSearch').style.display = 'block';
+    }
+  }
+
+  // 問題オブジェクトからカテゴリ情報を取得
+  function getQuestionCategory(q) {
+    if (!q) return { part: '', era: '', item: '' };
+    const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+    if (cat) return cat;
+    return {
+      part: q.part || '',
+      era: q.era || '',
+      item: q.item || ''
+    };
+  }
+
+  // 全体正答率＆時代別グラフの更新
+  function updateStats() {
+    const keys = Object.keys(history);
+    if (keys.length === 0) {
+      document.getElementById('statsAccuracy').textContent = '0';
+    } else {
       const corrects = keys.filter(k => history[k] === true).length;
       const rate = Math.round((corrects / keys.length) * 100);
       document.getElementById('statsAccuracy').textContent = rate;
     }
+    renderEraStats();
+  }
 
-    // 進捗画面の描画
-    function renderProgress() {
-      const keys = Object.keys(history);
-      const total = QUESTIONS.length;
-      const answered = keys.length;
-      const correct = keys.filter(k => history[k] === true).length;
-      const incorrect = answered - correct;
+  // 時代別正答率の描画
+  function renderEraStats() {
+    const container = document.getElementById('eraStatsList');
+    if (!container) return;
 
-      document.getElementById('progTotal').textContent = total;
-      document.getElementById('progAnswered').textContent = answered;
-      document.getElementById('progCorrect').textContent = correct;
-      document.getElementById('progIncorrect').textContent = incorrect;
+    const eraMap = {};
+    if (typeof QUESTIONS !== 'undefined') {
+      QUESTIONS.forEach(q => {
+        const isAnswered = history[q.id] !== undefined;
+        if (isAnswered) {
+          const cat = getQuestionCategory(q);
+          const eraName = cat.era || q.era || 'その他';
 
-      [3, 2, 1, 0].forEach(star => {
-        const starQs = QUESTIONS.filter(q => q.star === star);
-        const starAns = starQs.filter(q => history[q.id] !== undefined);
-        const starCorr = starQs.filter(q => history[q.id] === true);
-        const rate = starAns.length ? Math.round((starCorr.length / starAns.length) * 100) : 0;
-        document.getElementById(`rateStar${star}`).textContent = `${rate}% (${starCorr.length}/${starAns.length}問正解)`;
+          if (!eraMap[eraName]) {
+            eraMap[eraName] = { correct: 0, total: 0 };
+          }
+          eraMap[eraName].total += 1;
+          if (history[q.id] === true) {
+            eraMap[eraName].correct += 1;
+          }
+        }
       });
     }
 
-    // 復習画面の描画
-    function renderReview() {
-      const mistaken = QUESTIONS.filter(q => history[q.id] === false).length;
-      const unanswered = QUESTIONS.filter(q => history[q.id] === undefined).length;
-      document.getElementById('countMistaken').textContent = mistaken;
-      document.getElementById('countUnanswered').textContent = unanswered;
+    const eras = Object.keys(eraMap);
+    if (eras.length === 0) {
+      container.innerHTML = '<p style="color: #666; font-size: 0.9em;">まだ解答データがありません。</p>';
+      return;
     }
 
-    // 復習タブからのクイックスタート
-    function startQuickQuiz(mode) {
-      document.getElementById('modeSelect').value = mode;
-      switchTab('home');
-      startQuiz();
-    }
-
-    // 検索画面の描画
-    function renderSearch() {
-      const query = document.getElementById('searchInput').value.trim().toLowerCase();
-      const resultsEl = document.getElementById('searchResults');
-      
-      const filtered = QUESTIONS.filter(q => {
-        if (!query) return true;
-        return q.question.toLowerCase().includes(query) || 
-               q.answer.toLowerCase().includes(query) || 
-               q.era.toLowerCase().includes(query);
-      });
-
-      if (filtered.length === 0) {
-        resultsEl.innerHTML = '<p style="color:#8e8e93;">該当する問題が見つかりません。</p>';
-        return;
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">';
+    eras.forEach(era => {
+      const data = eraMap[era];
+      const rate = Math.round((data.correct / data.total) * 100);
+      let badgeColor = '#34c759';
+      let label = '良好';
+      if (rate < 60) {
+        badgeColor = '#ff3b30';
+        label = '⚠️ 苦手';
+      } else if (rate < 80) {
+        badgeColor = '#ff9500';
+        label = '要確認';
       }
 
-      resultsEl.innerHTML = filtered.map(q => `
-        <div class="search-item">
-          <span class="badge">${q.era}</span>
-          <span class="badge" style="background:#fff3c4; color:#996600;">${'★'.repeat(q.star || 0) || '無印'}</span>
-          <div class="search-q">${q.question}</div>
-          <div class="search-a">答: ${q.answer}</div>
-          ${q.explanation ? `<div style="font-size:12px; color:#666; margin-top:2px;">${q.explanation}</div>` : ''}
+      html += `
+        <div style="border: 1px solid #eee; padding: 8px 12px; border-radius: 8px; background: #fafafa;">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; font-weight: bold; margin-bottom: 4px;">
+            <span>${era}</span>
+            <span style="color: ${badgeColor};">${label} (${rate}%)</span>
+          </div>
+          <div style="background: #e5e5ea; height: 6px; border-radius: 3px; overflow: hidden;">
+            <div style="background: ${badgeColor}; width: ${rate}%; height: 100%;"></div>
+          </div>
         </div>
-      `).join('');
-    }
-    // 問題からカテゴリ情報を取得する関数
-    function getQuestionCategory(q) {
-      if (!q) return { part: '', era: '', item: '' };
-      
-      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
-      if (cat) {
-        return cat;
-      }
-      
-      return {
-        part: q.part || '',
-        era: q.era || '',
-        item: q.item || ''
-      };
-    }
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
 
-    // テストスタート
-   function startQuiz() {
-      const selectedStars = getSelectedStars();
-      const partVal = document.getElementById('partSelect').value;
-      const eraVal = document.getElementById('eraSelect').value;
-      const itemVal = document.getElementById('itemSelect').value;
-      const mode = document.getElementById('modeSelect').value;
-      const countVal = document.getElementById('countSelect').value;
+  // 進捗画面の描画
+  function renderProgress() {
+    const keys = Object.keys(history);
+    const total = QUESTIONS.length;
+    const answered = keys.length;
+    const correct = keys.filter(k => history[k] === true).length;
+    const incorrect = answered - correct;
 
-      if (selectedStars.length === 0) {
-        alert('星を最低1つ以上選択してください。');
-        return;
-      }
+    document.getElementById('progTotal').textContent = total;
+    document.getElementById('progAnswered').textContent = answered;
+    document.getElementById('progCorrect').textContent = correct;
+    document.getElementById('progIncorrect').textContent = incorrect;
 
-      let filtered = QUESTIONS.filter(q => {
-        // 星の選択チェック
-        if (!selectedStars.includes(q.star)) return false;
+    [3, 2, 1, 0].forEach(star => {
+      const starQs = QUESTIONS.filter(q => q.star === star);
+      const starAns = starQs.filter(q => history[q.id] !== undefined);
+      const starCorr = starQs.filter(q => history[q.id] === true);
+      const rate = starAns.length ? Math.round((starCorr.length / starAns.length) * 100) : 0;
+      document.getElementById(`rateStar${star}`).textContent = `${rate}% (${starCorr.length}/${starAns.length}問正解)`;
+    });
+  }
 
-        // 問題IDからカテゴリ判定
-        const cat = getQuestionCategory(q.id);
+  // 復習画面の描画
+  function renderReview() {
+    const mistaken = QUESTIONS.filter(q => history[q.id] === false).length;
+    const unanswered = QUESTIONS.filter(q => history[q.id] === undefined).length;
+    document.getElementById('countMistaken').textContent = mistaken;
+    document.getElementById('countUnanswered').textContent = unanswered;
+  }
 
-        // 階層選択（部・時代・詳細項目）のフィルタ
-        if (partVal !== 'ALL' && cat.part !== partVal) return false;
-        if (eraVal !== 'ALL' && cat.era !== eraVal) return false;
-        if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
+  function startQuickQuiz(mode) {
+    document.getElementById('modeSelect').value = mode;
+    switchTab('home');
+    startQuiz();
+  }
 
-        // 解答状態のフィルタ（未回答・間違い）
-        if (mode === 'unanswered' && history[q.id] !== undefined) return false;
-        if (mode === 'mistaken' && history[q.id] !== false) return false;
+  // 検索画面の描画
+  function renderSearch() {
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    const resultsEl = document.getElementById('searchResults');
+    
+    const filtered = QUESTIONS.filter(q => {
+      if (!query) return true;
+      return q.question.toLowerCase().includes(query) || 
+             q.answer.toLowerCase().includes(query) || 
+             (q.era && q.era.toLowerCase().includes(query));
+    });
 
-        return true;
-      });
-
-      if (filtered.length === 0) {
-        alert('条件に一致する問題がありません。');
-        return;
-      }
-
-      // ランダムシャッフル
-      filtered.sort(() => Math.random() - 0.5);
-
-      if (countVal !== 'all') {
-        filtered = filtered.slice(0, parseInt(countVal));
-      }
-
-      currentQuestions = filtered;
-      currentIndex = 0;
-
-      document.getElementById('viewHome').style.display = 'none';
-      document.getElementById('quizView').style.display = 'block';
-      loadQuestion();
+    if (filtered.length === 0) {
+      resultsEl.innerHTML = '<p style="color:#8e8e93;">該当する問題が見つかりません。</p>';
+      return;
     }
 
-    function loadQuestion() {
-      if (currentIndex >= currentQuestions.length) {
-        alert('すべての問題が終了しました！');
-        exitQuiz();
-        return;
-      }
+    resultsEl.innerHTML = filtered.map(q => `
+      <div class="search-item">
+        <span class="badge">${q.era || '全体'}</span>
+        <span class="badge" style="background:#fff3c4; color:#996600;">${'★'.repeat(q.star || 0) || '無印'}</span>
+        <div class="search-q">${q.question}</div>
+        <div class="search-a">答: ${q.answer}</div>
+        ${q.explanation ? `<div style="font-size:12px; color:#666; margin-top:2px;">${q.explanation}</div>` : ''}
+      </div>
+    `).join('');
+  }
 
-      const q = currentQuestions[currentIndex];
-      document.getElementById('eraBadge').textContent = q.era;
-      document.getElementById('starBadge').textContent = '★'.repeat(q.star) || '無印';
-      document.getElementById('progressText').textContent = `${currentIndex + 1} / ${currentQuestions.length}`;
-      document.getElementById('qText').textContent = q.question;
-      
-      document.getElementById('aText').textContent = '答: ' + q.answer;
-      document.getElementById('aText').style.display = 'none';
-      
-      const expEl = document.getElementById('expText');
-      if (q.explanation) {
-        expEl.textContent = '【解説】' + q.explanation;
-      } else {
-        expEl.textContent = '';
-      }
-      expEl.style.display = 'none';
+  // クイズ開始処理
+  function startQuiz() {
+    const selectedStars = getSelectedStars();
+    const partVal = document.getElementById('partSelect').value;
+    const eraVal = document.getElementById('eraSelect').value;
+    const itemVal = document.getElementById('itemSelect').value;
+    const mode = document.getElementById('modeSelect').value;
+    const countVal = document.getElementById('countSelect').value;
 
-      document.getElementById('ansBtn').style.display = 'block';
-      document.getElementById('judgeBtns').style.display = 'none';
+    if (selectedStars.length === 0) {
+      alert('星を最低1つ以上選択してください。');
+      return;
     }
 
-    function showAnswer() {
-      document.getElementById('aText').style.display = 'block';
-      if (document.getElementById('expText').textContent) {
-        document.getElementById('expText').style.display = 'block';
-      }
-      document.getElementById('ansBtn').style.display = 'none';
-      document.getElementById('judgeBtns').style.display = 'block';
+    let filtered = QUESTIONS.filter(q => {
+      if (!selectedStars.includes(q.star)) return false;
+
+      const cat = getQuestionCategory(q);
+
+      if (partVal !== 'ALL' && cat.part !== partVal) return false;
+      if (eraVal !== 'ALL' && cat.era !== eraVal) return false;
+      if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
+
+      if (mode === 'unanswered' && history[q.id] !== undefined) return false;
+      if (mode === 'mistaken' && history[q.id] !== false) return false;
+
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      alert('条件に一致する問題がありません。');
+      return;
     }
 
-    function answerQuestion(isCorrect) {
-      const q = currentQuestions[currentIndex];
-      history[q.id] = isCorrect;
-      localStorage.setItem('history', JSON.stringify(history));
-      updateStats();
+    filtered.sort(() => Math.random() - 0.5);
 
-      currentIndex++;
-      loadQuestion();
+    if (countVal !== 'all') {
+      filtered = filtered.slice(0, parseInt(countVal));
     }
 
-    function exitQuiz() {
-      switchTab('home');
-      updateStats();
+    currentQuestions = filtered;
+    currentIndex = 0;
+
+    document.getElementById('viewHome').style.display = 'none';
+    document.getElementById('quizView').style.display = 'block';
+    loadQuestion();
+  }
+
+  function loadQuestion() {
+    if (currentIndex >= currentQuestions.length) {
+      alert('すべての問題が終了しました！');
+      exitQuiz();
+      return;
     }
 
-  // 問題からカテゴリ情報を取得するヘルパー関数
-    function getQuestionCategory(q) {
-      if (!q) return { part: '', era: '', item: '' };
-      
-      // CATEGORY_MAP から該当する章（item）を探す
-      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
-      if (cat) {
-        return cat;
-      }
-      
-      return {
-        part: q.part || '',
-        era: q.era || '',
-        item: q.item || ''
-      };
+    const q = currentQuestions[currentIndex];
+    document.getElementById('eraBadge').textContent = q.era || '時代';
+    document.getElementById('starBadge').textContent = '★'.repeat(q.star) || '無印';
+    document.getElementById('progressText').textContent = `${currentIndex + 1} / ${currentQuestions.length}`;
+    document.getElementById('qText').textContent = q.question;
+    
+    document.getElementById('aText').textContent = '答: ' + q.answer;
+    document.getElementById('aText').style.display = 'none';
+    
+    const expEl = document.getElementById('expText');
+    if (q.explanation) {
+      expEl.textContent = '【解説】' + q.explanation;
+    } else {
+      expEl.textContent = '';
     }
-    // updateStats の定義と呼び出し補完
-    function updateStats() {
-      if (typeof renderEraStats === 'function') {
-        renderEraStats();
-      }
+    expEl.style.display = 'none';
+
+    document.getElementById('ansBtn').style.display = 'block';
+    document.getElementById('judgeBtns').style.display = 'none';
+  }
+
+  function showAnswer() {
+    document.getElementById('aText').style.display = 'block';
+    if (document.getElementById('expText').textContent) {
+      document.getElementById('expText').style.display = 'block';
     }
-  </script>
+    document.getElementById('ansBtn').style.display = 'none';
+    document.getElementById('judgeBtns').style.display = 'block';
+  }
+
+  function answerQuestion(isCorrect) {
+    const q = currentQuestions[currentIndex];
+    history[q.id] = isCorrect;
+    localStorage.setItem('history', JSON.stringify(history));
+    updateStats();
+
+    currentIndex++;
+    loadQuestion();
+  }
+
+  function exitQuiz() {
+    switchTab('home');
+    updateStats();
+  }
+</script>
 </body>
 </html>
