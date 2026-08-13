@@ -135,8 +135,78 @@
         <p style="margin:6px 0;">★ : <span id="rateStar1">0%</span></p>
         <p style="margin:6px 0;">無印 : <span id="rateStar0">0%</span></p>
       </div>
+      <!-- 時代別の苦手分析カード -->
+      <div class="card">
+        <div class="card-title">📊 時代・テーマ別 正答率</div>
+        <div id="eraStatsList">
+          <p style="color: #666; font-size: 0.9em;">まだ解答データがありません。</p>
+        </div>
+      </div>
     </div>
+<script>
+  // 時代別の正答率・苦手集計
+  function renderEraStats() {
+    const container = document.getElementById('eraStatsList');
+    if (!container) return;
 
+    const eraMap = {};
+
+    if (typeof QUESTIONS !== 'undefined') {
+      QUESTIONS.forEach(q => {
+        const h = history[q.id];
+        if (h && h.count > 0) {
+          const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+          const eraName = cat ? cat.era : (q.era || 'その他');
+
+          if (!eraMap[eraName]) {
+            eraMap[eraName] = { correct: 0, total: 0 };
+          }
+
+          eraMap[eraName].total += h.count;
+          eraMap[eraName].correct += (h.correctCount || 0);
+        }
+      });
+    }
+
+    const eras = Object.keys(eraMap);
+    if (eras.length === 0) {
+      container.innerHTML = '<p style="color: #666; font-size: 0.9em;">まだ解答データがありません。</p>';
+      return;
+    }
+
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">';
+
+    eras.forEach(era => {
+      const data = eraMap[era];
+      const rate = Math.round((data.correct / data.total) * 100);
+
+      let badgeColor = '#34c759';
+      let label = '良好';
+      if (rate < 60) {
+        badgeColor = '#ff3b30';
+        label = '⚠️ 苦手';
+      } else if (rate < 80) {
+        badgeColor = '#ff9500';
+        label = '要確認';
+      }
+
+      html += `
+        <div style="border: 1px solid #eee; padding: 8px 12px; border-radius: 8px; background: #fafafa;">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; font-weight: bold; margin-bottom: 4px;">
+            <span>${era}</span>
+            <span style="color: ${badgeColor};">${label} (${rate}%)</span>
+          </div>
+          <div style="background: #e5e5ea; height: 6px; border-radius: 3px; overflow: hidden;">
+            <div style="background: ${badgeColor}; width: ${rate}%; height: 100%;"></div>
+          </div>
+        </div>
+      `;
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+  }
+</script>
     <!-- 3. 復習画面 -->
     <div id="viewReview" style="display:none;">
       <div class="card">
@@ -9201,6 +9271,12 @@
     function exitQuiz() {
       switchTab('home');
       updateStats();
+    }
+    // updateStats の定義と呼び出し補完
+    function updateStats() {
+      if (typeof renderEraStats === 'function') {
+        renderEraStats();
+      }
     }
   </script>
 </body>
