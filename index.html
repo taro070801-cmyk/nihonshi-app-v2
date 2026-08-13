@@ -9288,21 +9288,101 @@
       updateStats();
     }
 
-  // 問題からカテゴリ情報を取得するヘルパー関数
+// 文字列を正規化するヘルパー（数字や記号を除去して純粋なテキストで比較）
+    function normalizeText(text) {
+      if (!text) return '';
+      return String(text).replace(/^[0-9０-９\s\.\・\-\〜\~]+/g, '').trim();
+    }
+
+    // 問題からカテゴリ情報を取得する関数
     function getQuestionCategory(q) {
       if (!q) return { part: '', era: '', item: '' };
       
-      // CATEGORY_MAP から該当する章（item）を探す
-      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
-      if (cat) {
-        return cat;
-      }
+      const qItemNorm = normalizeText(q.item);
+
+      const cat = CATEGORY_MAP.find(c => {
+        const cItemNorm = normalizeText(c.item);
+        if (qItemNorm && cItemNorm && (qItemNorm === cItemNorm || qItemNorm.includes(cItemNorm) || cItemNorm.includes(qItemNorm))) {
+          return true;
+        }
+        if (q.era && c.era && q.era === c.era) {
+          return true;
+        }
+        return false;
+      });
       
+      if (cat) return cat;
+
       return {
         part: q.part || '',
         era: q.era || '',
         item: q.item || ''
       };
+    }
+
+    // テストスタート
+    function startQuiz() {
+      const selectedStars = getSelectedStars();
+      const partVal = document.getElementById('partSelect').value;
+      const eraVal = document.getElementById('eraSelect').value;
+      const itemVal = document.getElementById('itemSelect').value;
+      const mode = document.getElementById('modeSelect').value;
+      const countVal = document.getElementById('countSelect').value;
+
+      if (selectedStars.length === 0) {
+        alert('星を最低1つ以上選択してください。');
+        return;
+      }
+
+      const selectedItemNorm = normalizeText(itemVal);
+
+      let filtered = QUESTIONS.filter(q => {
+        // 1. 星（難易度）判定
+        const qStar = q.star !== undefined ? String(q.star) : "0";
+        if (!selectedStars.includes(qStar)) return false;
+
+        // カテゴリ情報取得
+        const cat = getQuestionCategory(q);
+
+        // 2. 部の絞り込み
+        if (partVal !== 'all' && cat.part !== partVal && q.part !== partVal) return false;
+
+        // 3. 時代の絞り込み
+        if (eraVal !== 'all' && cat.era !== eraVal && q.era !== eraVal) return false;
+
+        // 4. 章（詳細項目）の絞り込み（正規化して比較）
+        if (itemVal !== 'all') {
+          const qItemNorm = normalizeText(q.item);
+          const catItemNorm = normalizeText(cat.item);
+
+          const matchDirect = qItemNorm && (qItemNorm === selectedItemNorm || qItemNorm.includes(selectedItemNorm) || selectedItemNorm.includes(qItemNorm));
+          const matchCat = catItemNorm && (catItemNorm === selectedItemNorm || catItemNorm.includes(selectedItemNorm) || selectedItemNorm.includes(catItemNorm));
+
+          if (!matchDirect && !matchCat) return false;
+        }
+
+        // 5. 出題モード判定
+        const h = history[q.id] || { count: 0, correctCount: 0 };
+        if (mode === 'unanswered' && h.count > 0) return false;
+        if (mode === 'wrong' && (h.count === 0 || h.correctCount === h.count)) return false;
+
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        alert('条件に一致する問題がありません。');
+        return;
+      }
+
+      // ランダムシャッフルして指定問題数をセット
+      filtered.sort(() => Math.random() - 0.5);
+      const limit = countVal === 'all' ? filtered.length : parseInt(countVal, 10);
+      currentQuestions = filtered.slice(0, limit);
+      currentIndex = 0;
+
+      // 画面切り替え & 出題開始
+      switchTab('quiz');
+      loadQuestion();
     }
     // updateStats の定義と呼び出し補完
     function updateStats() {
