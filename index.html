@@ -8770,7 +8770,7 @@
     let history = JSON.parse(localStorage.getItem('history') || '{}');
 
     window.addEventListener('DOMContentLoaded', () => {
-      initEraSelect();
+      initCategorySelects();
       updateStats();
       renderSearch();
     });
@@ -8901,9 +8901,11 @@
     }
 
     // テストスタート
-    function startQuiz() {
+   function startQuiz() {
       const selectedStars = getSelectedStars();
-      const selectedEra = document.getElementById('eraSelect').value;
+      const partVal = document.getElementById('partSelect').value;
+      const eraVal = document.getElementById('eraSelect').value;
+      const itemVal = document.getElementById('itemSelect').value;
       const mode = document.getElementById('modeSelect').value;
       const countVal = document.getElementById('countSelect').value;
 
@@ -8913,10 +8915,21 @@
       }
 
       let filtered = QUESTIONS.filter(q => {
+        // 星の選択チェック
         if (!selectedStars.includes(q.star)) return false;
-        if (selectedEra !== 'ALL' && q.era !== selectedEra) return false;
+
+        // 問題IDからカテゴリ判定
+        const cat = getQuestionCategory(q.id);
+
+        // 階層選択（部・時代・詳細項目）のフィルタ
+        if (partVal !== 'ALL' && cat.part !== partVal) return false;
+        if (eraVal !== 'ALL' && cat.era !== eraVal) return false;
+        if (itemVal !== 'ALL' && cat.item !== itemVal) return false;
+
+        // 解答状態のフィルタ（未回答・間違い）
         if (mode === 'unanswered' && history[q.id] !== undefined) return false;
         if (mode === 'mistaken' && history[q.id] !== false) return false;
+
         return true;
       });
 
@@ -8925,6 +8938,7 @@
         return;
       }
 
+      // ランダムシャッフル
       filtered.sort(() => Math.random() - 0.5);
 
       if (countVal !== 'all') {
