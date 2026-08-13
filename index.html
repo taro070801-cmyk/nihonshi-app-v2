@@ -9167,6 +9167,21 @@
         </div>
       `).join('');
     }
+    // 問題からカテゴリ情報を取得する関数
+    function getQuestionCategory(q) {
+      if (!q) return { part: '', era: '', item: '' };
+      
+      const cat = CATEGORY_MAP.find(c => c.item === q.item || c.era === q.era);
+      if (cat) {
+        return cat;
+      }
+      
+      return {
+        part: q.part || '',
+        era: q.era || '',
+        item: q.item || ''
+      };
+    }
 
     // テストスタート
    function startQuiz() {
