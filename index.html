@@ -9257,9 +9257,9 @@
     ];
   
   // 3. アプリのグローバル状態
-  let currentQuestions = [];
-  let currentIndex = 0;
-  let history = JSON.parse(localStorage.getItem('history') || '{}');
+  currentQuestions = [];
+  currentIndex = 0;
+  history = JSON.parse(localStorage.getItem('history') || '{}');
 
   // 初期化処理
   window.addEventListener('DOMContentLoaded', () => {
