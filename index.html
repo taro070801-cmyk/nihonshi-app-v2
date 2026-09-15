@@ -9594,6 +9594,7 @@
     const q = currentQuestions[currentIndex];
     history[q.id] = isCorrect;
     localStorage.setItem('history', JSON.stringify(history));
+    recordEraStat(q, isCorrect);
     updateStats();
 
     currentIndex++;
@@ -9604,6 +9605,63 @@
     switchTab('home');
     updateStats();
   }
+  // ==========================================
+// 時代別正答率の集計・表示機能
+// ==========================================
+function recordEraStat(q, isCorrect) {
+    if (!q) return;
+    
+    let era = q.era;
+    if (!era && typeof sections !== 'undefined') {
+        const sec = sections.find(s => q.id >= s.idStart && q.id <= s.idEnd);
+        if (sec) era = sec.era;
+    }
+    if (!era) era = "その他";
+
+    let stats = JSON.parse(localStorage.getItem('era_stats') || '{}');
+    if (!stats[era]) stats[era] = { total: 0, correct: 0 };
+    
+    stats[era].total++;
+    if (isCorrect) stats[era].correct++;
+    
+    localStorage.setItem('era_stats', JSON.stringify(stats));
+    updateEraStatsDisplay();
+}
+
+function updateEraStatsDisplay() {
+    let box = document.getElementById('era-stats-auto-box');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'era-stats-auto-box';
+        box.style.cssText = 'margin: 20px auto; padding: 20px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; max-width: 600px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-family: sans-serif;';
+        const target = document.querySelector('.container') || document.body;
+        target.appendChild(box);
+    }
+    
+    let stats = JSON.parse(localStorage.getItem('era_stats') || '{}');
+    if (Object.keys(stats).length === 0) {
+        box.innerHTML = '<h3 style="margin:0 0 10px; font-size:16px; color:#1f2937;">📊 時代別正答率</h3><p style="margin:0; font-size:14px; color:#6b7280;">まだ解答データがありません。問題を解くとここに表示されます。</p>';
+        return;
+    }
+
+    let html = '<h3 style="margin:0 0 14px; font-size:16px; color:#1f2937;">📊 時代別正答率</h3>';
+    for (let era in stats) {
+        let s = stats[era];
+        let rate = s.total > 0 ? ((s.correct / s.total) * 100).toFixed(1) : 0;
+        html += `<div style="margin-bottom:12px; font-size:14px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#374151;">
+                <span style="font-weight:600;">${era}</span>
+                <span><strong>${rate}%</strong> <span style="font-size:12px; color:#6b7280;">(${s.correct}/${s.total}問)</span></span>
+            </div>
+            <div style="background:#f3f4f6; height:8px; border-radius:4px; overflow:hidden;">
+                <div style="width:${rate}%; background:#3b82f6; height:100%; transition:width 0.3s;"></div>
+            </div>
+        </div>`;
+    }
+    box.innerHTML = html;
+}
+
+window.addEventListener('DOMContentLoaded', updateEraStatsDisplay);
 </script>
 </body>
 </html>
