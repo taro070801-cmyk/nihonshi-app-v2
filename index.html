@@ -440,15 +440,13 @@
         return;
       }
 
-      // 選択された出題順（ランダム or 掲載順）に応じて並び替える
+     // 選択された出題順を取得
 const orderSelect = document.getElementById('orderSelect');
 const orderMode = orderSelect ? orderSelect.value : 'random';
 
-if (orderMode === 'sequential') {
-    // 【掲載順】ID順（歴史順）に並べる
-    filtered.sort((a, b) => (a.id || 0) - (b.id || 0));
-} else {
-    // 【ランダム】シャッフルする
+// 「ランダム」が選ばれているときだけシャッフルする
+// （掲載順のときは、元のリストの順番のまま何もしません）
+if (orderMode === 'random') {
     filtered.sort(() => Math.random() - 0.5);
 }
 
