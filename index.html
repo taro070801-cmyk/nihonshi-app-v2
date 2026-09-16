@@ -116,6 +116,14 @@
         </select>
       </div>
 
+      <div class="card">
+    <label for="orderSelect">🔀 出題順</label>
+    <select id="orderSelect">
+        <option value="random">ランダム</option>
+        <option value="sequential">掲載順（歴史順）</option>
+    </select>
+</div>
+
       <button class="btn-primary" onclick="startQuiz()">テストスタート</button>
     </div>
 
@@ -432,8 +440,17 @@
         return;
       }
 
-      // ランダムシャッフル
-      filtered.sort(() => Math.random() - 0.5);
+      // 順番のモード（ランダム or 掲載順）を判定して並び替える
+const orderSelect = document.getElementById('orderSelect');
+const orderMode = orderSelect ? orderSelect.value : 'random';
+
+if (orderMode === 'sequential') {
+    // 【掲載順】ID順に並べる
+    filtered.sort((a, b) => (a.id || 0) - (b.id || 0));
+} else {
+    // 【ランダム】シャッフルする
+    filtered.sort(() => Math.random() - 0.5);
+}
 
       if (countVal !== 'all') {
         filtered = filtered.slice(0, parseInt(countVal));
