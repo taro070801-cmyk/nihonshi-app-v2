@@ -9554,7 +9554,14 @@ if (orderMode === 'random') {
       return;
     }
 
+    const orderSelect = document.getElementById('orderSelect');
+const orderMode = orderSelect ? orderSelect.value : 'random';
+
+if (orderMode === 'sequential') {
+    filtered.sort((a, b) => (a.id || 0) - (b.id || 0));
+} else {
     filtered.sort(() => Math.random() - 0.5);
+}
 
     if (countVal !== 'all') {
       filtered = filtered.slice(0, parseInt(countVal));
