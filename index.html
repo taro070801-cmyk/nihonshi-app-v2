@@ -9631,6 +9631,71 @@ if (orderMode === 'sequential') {
     switchTab('home');
     updateStats();
   }
+  // ==========================================
+// 途中中断・再開機能の追加コード
+// ==========================================
+
+// 1. クイズの状態を保存する関数
+function saveQuizState() {
+  if (currentQuestions.length === 0) return;
+  
+  const quizState = {
+    currentQuestions: currentQuestions,
+    currentIndex: currentIndex,
+    isInQuiz: document.getElementById('quizView').style.display === 'block'
+  };
+  localStorage.setItem('quizState', JSON.stringify(quizState));
+}
+
+// 2. ページ読み込み時に中断データがあれば復元を促す（または自動復元）
+window.addEventListener('DOMContentLoaded', () => {
+  // 既存のDOMContentLoaded処理の邪魔をしないよう後からチェック
+  setTimeout(() => {
+    const savedStateStr = localStorage.getItem('quizState');
+    if (!savedStateStr) return;
+
+    try {
+      const state = JSON.parse(savedStateStr);
+      // 問題が残っていて、かつテスト中だった場合のみ復元確認
+      if (state.isInQuiz && state.currentQuestions && state.currentIndex < state.currentQuestions.length) {
+        if (confirm('前回のテストの続きから再開しますか？')) {
+          currentQuestions = state.currentQuestions;
+          currentIndex = state.currentIndex;
+
+          // 画面をクイズ画面に切り替え
+          document.getElementById('viewHome').style.display = 'none';
+          document.getElementById('quizView').style.display = 'block';
+          
+          // タブの選択状態をホームに戻すなど
+          document.querySelectorAll('#tabBar .tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('#tabBar .tab')[0].classList.add('active');
+
+          loadQuestion();
+        } else {
+          // キャンセルした場合は保存データを消去
+          localStorage.removeItem('quizState');
+        }
+      }
+    } catch (e) {
+      console.error('クイズ状態の復元に失敗しました', e);
+      localStorage.removeItem('quizState');
+    }
+  }, 100);
+});
+
+// 3. 問題に回答するたびに状態を保存する（既存の answerQuestion に追記、または上書き）
+const originalAnswerQuestion = window.answerQuestion;
+window.answerQuestion = function(isCorrect) {
+  originalAnswerQuestion(isCorrect);
+  saveQuizState(); // 1問進むごとに状態を保存
+};
+
+// 4. テストが終了したとき（TOPに戻る、または全問終了時）に保存データをクリアする
+const originalExitQuiz = window.exitQuiz;
+window.exitQuiz = function() {
+  localStorage.removeItem('quizState'); // 終了時はデータを削除
+  originalExitQuiz();
+};
 </script>
 </body>
 </html>
