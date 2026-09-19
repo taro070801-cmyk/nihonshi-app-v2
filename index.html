@@ -9696,6 +9696,76 @@ window.exitQuiz = function() {
   localStorage.removeItem('quizState'); // 終了時はデータを削除
   originalExitQuiz();
 };
+  // キー名を独立させて、コードの書き換えで消えにくくする
+const STORAGE_KEY = 'my_custom_quiz_app_state_v1';
+
+// 1. クイズの状態を保存する関数
+function saveQuizState() {
+  if (!currentQuestions || currentQuestions.length === 0) return;
+  
+  const quizState = {
+    currentQuestions: currentQuestions,
+    currentIndex: currentIndex,
+    isInQuiz: document.getElementById('quizView') && document.getElementById('quizView').style.display === 'block',
+    savedAt: new Date().getTime() // 保存したタイムスタンプを残す
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(quizState));
+}
+
+// 2. ページ読み込み時の復元処理
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const savedStateStr = localStorage.getItem(STORAGE_KEY);
+    if (!savedStateStr) return;
+
+    try {
+      const state = JSON.parse(savedStateStr);
+      
+      // 保存されてから24時間以内かつ、問題が残っている場合のみ復元の選択肢を出す
+      const isRecent = (new Date().getTime() - state.savedAt) < 24 * 60 * 60 * 1000;
+      
+      if (state.isInQuiz && state.currentQuestions && state.currentIndex < state.currentQuestions.length && isRecent) {
+        if (confirm('前回のテストの続きから再開しますか？')) {
+          currentQuestions = state.currentQuestions;
+          currentIndex = state.currentIndex;
+
+          document.getElementById('viewHome').style.display = 'none';
+          document.getElementById('quizView').style.display = 'block';
+          
+          document.querySelectorAll('#tabBar .tab').forEach(t => t.classList.remove('active'));
+          if(document.querySelectorAll('#tabBar .tab')[0]) {
+            document.querySelectorAll('#tabBar .tab')[0].classList.add('active');
+          }
+
+          if (typeof loadQuestion === 'function') loadQuestion();
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+    } catch (e) {
+      console.error('復元エラー:', e);
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, 100);
+});
+
+// 3. 回答時に自動保存
+const originalAnswerQuestion = window.answerQuestion;
+window.answerQuestion = function(isCorrect) {
+  if (typeof originalAnswerQuestion === 'function') {
+    originalAnswerQuestion(isCorrect);
+  }
+  saveQuizState();
+};
+
+// 4. 終了時はクリア
+const originalExitQuiz = window.exitQuiz;
+window.exitQuiz = function() {
+  localStorage.removeItem(STORAGE_KEY);
+  if (typeof originalExitQuiz === 'function') {
+    originalExitQuiz();
+  }
+};
 </script>
 </body>
 </html>
